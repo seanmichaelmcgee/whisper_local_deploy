@@ -28,7 +28,7 @@ mkdir -p "$APPDIR/usr/share/applications"
 mkdir -p "$APPDIR/usr/share/icons/hicolor/scalable/apps"
 mkdir -p "$APPDIR/usr/share/whisper-models"
 
-# 1. Create AppRun script (entry point) with dynamic Python version
+# 1. Create AppRun script (entry point)
 echo "Creating AppRun entry point..."
 cat > "$APPDIR/AppRun" << EOF
 #!/bin/bash
@@ -57,7 +57,6 @@ chmod +x "$APPDIR/AppRun"
 
 # 2. Copy application scripts - Updated to use v0.8 and v12
 echo "Copying application files..."
-mkdir -p "$APPDIR/usr/bin"
 cp "$SRC_DIR/gui-v0.8.py" "$APPDIR/usr/bin/whisper-transcriber"
 cp "$SRC_DIR/transcriber_v12.py" "$APPDIR/usr/bin/transcriber_v12.py"
 chmod +x "$APPDIR/usr/bin/whisper-transcriber"
@@ -212,7 +211,7 @@ Name=Whisper Transcriber
 Comment=Real-time speech transcription with OpenAI Whisper
 Exec=whisper-transcriber
 Icon=whisper-transcriber
-Categories=Audio;Utility;
+Categories=AudioVideo;Audio;Utility;
 Terminal=false
 EOF
 
@@ -228,7 +227,7 @@ EOF
 ln -sf usr/share/applications/whisper-transcriber.desktop "$APPDIR/whisper-transcriber.desktop"
 ln -sf usr/share/icons/hicolor/scalable/apps/whisper-transcriber.svg "$APPDIR/whisper-transcriber.svg"
 
-# 6. Set up Python environment
+# 6. Set up minimal Python environment
 echo "Setting up Python environment..."
 cd "$BUILD_DIR"
 python3 -m venv venv
@@ -259,8 +258,6 @@ SITE_PACKAGES_PATH="venv/lib/python$PYTHON_VERSION/site-packages"
 echo "Using site-packages from: $SITE_PACKAGES_PATH"
 
 # Copy essential packages using the correct Python version path
-echo "Copying essential Python packages..."
-# Check that directories exist before copying
 for pkg in whisper torch gi pyaudio numpy regex tiktoken tqdm numba llvmlite; do
   if [ -d "$SITE_PACKAGES_PATH/$pkg" ]; then
     echo "Copying $pkg"
@@ -316,9 +313,20 @@ fi
 # Build the AppImage
 ./appimagetool -n "$APPDIR"
 
-# Rename to final version
-mv Whisper*.AppImage WhisperTranscriber-$VERSION-lean-x86_64.AppImage
-chmod +x WhisperTranscriber-$VERSION-lean-x86_64.AppImage
+# Rename to final version with fallback handling
+mv Whisper_Transcriber-x86_64.AppImage WhisperTranscriber-$VERSION-lean-x86_64.AppImage 2>/dev/null || true
 
-echo "=== Lean AppImage created successfully: $(pwd)/WhisperTranscriber-$VERSION-lean-x86_64.AppImage ==="
+# Get final size and display success message
+if [ -f "WhisperTranscriber-$VERSION-lean-x86_64.AppImage" ]; then
+    FINAL_SIZE=$(du -h WhisperTranscriber-$VERSION-lean-x86_64.AppImage | cut -f1)
+    echo "=== Lean AppImage created successfully! ==="
+    echo "Location: $(pwd)/WhisperTranscriber-$VERSION-lean-x86_64.AppImage"
+    echo "Size: $FINAL_SIZE"
+else
+    echo "=== AppImage created as Whisper_Transcriber-x86_64.AppImage ==="
+    echo "Location: $(pwd)/Whisper_Transcriber-x86_64.AppImage"
+    echo "Size: $(du -h Whisper_Transcriber-x86_64.AppImage | cut -f1)"
+fi
+
 echo "This AppImage will download the Whisper 'small' model on first run."
+echo "New in v0.8: Audio level visualization and improved transcription quality"

@@ -12,49 +12,53 @@ BUILD_DIR="$OUTPUT_DIR/build"
 APPDIR="$BUILD_DIR/WhisperTranscriber.AppDir"
 VERSION="0.8.0"  # Updated version number
 
+# Dynamically determine Python version
+PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+echo "Detected Python version: $PYTHON_VERSION"
+
 echo "=== Building Ultra-Lean Whisper Transcriber AppImage v$VERSION ==="
 echo "Project root: $PROJECT_ROOT"
 
 # Create necessary directories
 mkdir -p "$OUTPUT_DIR"
 mkdir -p "$APPDIR/usr/bin"
-mkdir -p "$APPDIR/usr/lib/python3.8/site-packages"
+mkdir -p "$APPDIR/usr/lib/python$PYTHON_VERSION/site-packages"
 mkdir -p "$APPDIR/usr/share/applications"
 mkdir -p "$APPDIR/usr/share/icons/hicolor/scalable/apps"
 
 # 1. Create AppRun script with dynamic environment setup
 echo "Creating advanced AppRun entry point..."
-cat > "$APPDIR/AppRun" << 'EOF'
+cat > "$APPDIR/AppRun" << EOF
 #!/bin/bash
 # AppRun script for WhisperTranscriber with dynamic environment detection
 
 # Find the directory where this AppRun script resides
-HERE="$(dirname "$(readlink -f "${0}")")"
+HERE="\$(dirname "\$(readlink -f "\${0}")")"
 
 # ------------------------
 # Environment setup
 # ------------------------
-export PATH="${HERE}/usr/bin:${PATH}"
-export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
-export PYTHONPATH="${HERE}/usr/lib/python3.8/site-packages:${PYTHONPATH}"
-export XDG_DATA_DIRS="${HERE}/usr/share:${XDG_DATA_DIRS}"
-export GI_TYPELIB_PATH="${HERE}/usr/lib/girepository-1.0:${GI_TYPELIB_PATH}"
+export PATH="\${HERE}/usr/bin:\${PATH}"
+export LD_LIBRARY_PATH="\${HERE}/usr/lib:\${LD_LIBRARY_PATH}"
+export PYTHONPATH="\${HERE}/usr/lib/python$PYTHON_VERSION/site-packages:\${PYTHONPATH}"
+export XDG_DATA_DIRS="\${HERE}/usr/share:\${XDG_DATA_DIRS}"
+export GI_TYPELIB_PATH="\${HERE}/usr/lib/girepository-1.0:\${GI_TYPELIB_PATH}"
 
 # Set the Whisper model cache directory to a user-accessible location
-MODEL_DIR="$HOME/.cache/whisper-transcriber"
-mkdir -p "$MODEL_DIR"
-export WHISPER_CACHE_DIR="$MODEL_DIR"
+MODEL_DIR="\$HOME/.cache/whisper-transcriber"
+mkdir -p "\$MODEL_DIR"
+export WHISPER_CACHE_DIR="\$MODEL_DIR"
 
 # ------------------------
 # GPU/CUDA detection
 # ------------------------
 # Check for system CUDA and PyTorch installations
-SYSTEM_PYTHON=$(which python3)
+SYSTEM_PYTHON=\$(which python3)
 GPU_AVAILABLE=false
 
 # Only check if system pytorch is available if we have system python
-if [ -n "$SYSTEM_PYTHON" ]; then
-    if $SYSTEM_PYTHON -c "import torch; exit(0 if torch.cuda.is_available() else 1)" 2>/dev/null; then
+if [ -n "\$SYSTEM_PYTHON" ]; then
+    if \$SYSTEM_PYTHON -c "import torch; exit(0 if torch.cuda.is_available() else 1)" 2>/dev/null; then
         GPU_AVAILABLE=true
         echo "System PyTorch with CUDA detected! Using system installation for GPU acceleration."
         export WHISPER_USE_SYSTEM_PYTORCH=1
@@ -62,17 +66,17 @@ if [ -n "$SYSTEM_PYTHON" ]; then
 fi
 
 # Create a log file for debugging
-LOG_FILE="$HOME/.cache/whisper-transcriber/appimage.log"
-echo "Starting WhisperTranscriber AppImage $(date)" > "$LOG_FILE"
-echo "GPU Available: $GPU_AVAILABLE" >> "$LOG_FILE"
-echo "System Python: $SYSTEM_PYTHON" >> "$LOG_FILE"
-echo "Current Python: $(which python3)" >> "$LOG_FILE"
+LOG_FILE="\$HOME/.cache/whisper-transcriber/appimage.log"
+echo "Starting WhisperTranscriber AppImage \$(date)" > "\$LOG_FILE"
+echo "GPU Available: \$GPU_AVAILABLE" >> "\$LOG_FILE"
+echo "System Python: \$SYSTEM_PYTHON" >> "\$LOG_FILE"
+echo "Current Python: \$(which python3)" >> "\$LOG_FILE"
 
 # ------------------------
 # Launch the application
 # ------------------------
-"${HERE}/usr/bin/python3" "${HERE}/usr/bin/whisper-transcriber" "$@"
-exit $?
+"\${HERE}/usr/bin/python3" "\${HERE}/usr/bin/whisper-transcriber" "\$@"
+exit \$?
 EOF
 chmod +x "$APPDIR/AppRun"
 
@@ -396,7 +400,7 @@ Name=Whisper Transcriber
 Comment=Real-time speech transcription with OpenAI Whisper
 Exec=whisper-transcriber
 Icon=whisper-transcriber
-Categories=Audio;Utility;
+Categories=AudioVideo;Audio;Utility;
 Terminal=false
 EOF
 
@@ -435,9 +439,10 @@ pip install --no-cache-dir tiktoken==0.9.0 --no-deps
 # 9. Bundle only essential Python packages (minimal approach)
 echo "Bundling minimal Python packages..."
 cp $(which python3) "$APPDIR/usr/bin/"
-mkdir -p "$APPDIR/usr/lib/python3.8/site-packages"
+mkdir -p "$APPDIR/usr/lib/python$PYTHON_VERSION/site-packages"
 
 # Manually copy only essential modules - extremely selective approach
+SITE_PACKAGES_PATH="venv/lib/python$PYTHON_VERSION/site-packages"
 modules_to_copy=(
     "whisper"
     "torch"
@@ -451,15 +456,17 @@ modules_to_copy=(
 )
 
 for module in "${modules_to_copy[@]}"; do
-    if [ -d "venv/lib/python3.8/site-packages/$module" ]; then
+    if [ -d "$SITE_PACKAGES_PATH/$module" ]; then
         echo "Copying module: $module"
-        cp -r "venv/lib/python3.8/site-packages/$module" "$APPDIR/usr/lib/python3.8/site-packages/"
+        cp -r "$SITE_PACKAGES_PATH/$module" "$APPDIR/usr/lib/python$PYTHON_VERSION/site-packages/"
+    else
+        echo "Warning: Module $module not found in $SITE_PACKAGES_PATH"
     fi
 done
 
 # Copy minimal dependencies for imports to work
-find venv/lib/python3.8/site-packages -maxdepth 1 -name "__pycache__" -prune -o -name "*.py" -print | xargs -I{} cp {} "$APPDIR/usr/lib/python3.8/site-packages/" 2>/dev/null || true
-find venv/lib/python3.8/site-packages -maxdepth 1 -name "*.dist-info" | xargs -I{} cp -r {} "$APPDIR/usr/lib/python3.8/site-packages/" 2>/dev/null || true
+find "$SITE_PACKAGES_PATH" -maxdepth 1 -name "__pycache__" -prune -o -name "*.py" -print | xargs -I{} cp {} "$APPDIR/usr/lib/python$PYTHON_VERSION/site-packages/" 2>/dev/null || true
+find "$SITE_PACKAGES_PATH" -maxdepth 1 -name "*.dist-info" | xargs -I{} cp -r {} "$APPDIR/usr/lib/python$PYTHON_VERSION/site-packages/" 2>/dev/null || true
 
 # 10. Bundle only absolutely essential system libraries 
 echo "Bundling minimal system libraries..."
@@ -530,15 +537,21 @@ fi
 # Build the AppImage with maximum compression
 ./appimagetool -n --comp xz "$APPDIR"
 
-# Rename to final version
-mv Whisper*.AppImage WhisperTranscriber-$VERSION-ultra-lean-x86_64.AppImage
-chmod +x WhisperTranscriber-$VERSION-ultra-lean-x86_64.AppImage
+# Rename to final version - Fixed to match correct source filename
+mv Whisper_Transcriber-x86_64.AppImage WhisperTranscriber-$VERSION-ultra-lean-x86_64.AppImage 2>/dev/null || true
 
 # Get final size
-FINAL_SIZE=$(du -h WhisperTranscriber-$VERSION-ultra-lean-x86_64.AppImage | cut -f1)
-echo "=== Ultra-Lean AppImage created successfully! ==="
-echo "Location: $(pwd)/WhisperTranscriber-$VERSION-ultra-lean-x86_64.AppImage"
-echo "Size: $FINAL_SIZE"
+if [ -f "WhisperTranscriber-$VERSION-ultra-lean-x86_64.AppImage" ]; then
+    FINAL_SIZE=$(du -h WhisperTranscriber-$VERSION-ultra-lean-x86_64.AppImage | cut -f1)
+    echo "=== Ultra-Lean AppImage created successfully! ==="
+    echo "Location: $(pwd)/WhisperTranscriber-$VERSION-ultra-lean-x86_64.AppImage"
+    echo "Size: $FINAL_SIZE"
+else
+    echo "=== AppImage created as Whisper_Transcriber-x86_64.AppImage ==="
+    echo "Location: $(pwd)/Whisper_Transcriber-x86_64.AppImage"
+    echo "Size: $(du -h Whisper_Transcriber-x86_64.AppImage | cut -f1)"
+fi
+
 echo "This AppImage will download the Whisper model on first run and"
 echo "will use system CUDA when available."
 echo ""
