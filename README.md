@@ -10,6 +10,11 @@ A lightweight, GPU-accelerated real-time speech transcription application powere
 
 This application provides real-time transcription of speech with a minimalist GTK interface. It's designed to be unobtrusive (stays on top with slight transparency) while efficiently transcribing speech in real-time using GPU acceleration when available.
 
+This application was built primarily using iterative work on consumer-level LLMs and reasoner models, particularly OpenAI o3-mini-high and GPT 4o, as well as Claude 3.7 Thinking by Anthropic.
+
+The application is optimized for English and transcription only. This can easily be adjusted in the transcriber code. This application runs stably in Ubuntu 24.04 on PC with NVIDIA 1660 Ti, 6GB of VRAM, and a 9th generation Intel i7. Enjoy!
+
+
 ## ✨ Features
 
 - **Real-time transcription** with OpenAI's Whisper model
