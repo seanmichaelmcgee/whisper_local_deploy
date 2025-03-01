@@ -7,18 +7,30 @@ import os
 import logging
 import whisper
 import torch
+import numpy as np
 
 # Audio configuration
 CHUNK = 1024
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 DEFAULT_CHUNK_DURATION = 30  # seconds for normal mode processing
-OVERLAP_DURATION = 1  # 1 second overlap
+OVERLAP_DURATION = 1 # 1 second overlap
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
-# A prompt to prime the transcription for technical terminology, improved for more tehcnical content after it did not catch 'gitignore'
-TECHNICAL_PROMPT = ( "This audio includes detailed technical content about Python development, " "machine learning, and software engineering workflows. Topics may involve " "Git, GitHub, version control (branches, commits, pull requests), coding in " "VS Code or Ubuntu, and libraries like PyTorch or TensorFlow. Please " "transcribe all technical terms accurately (e.g., ‘git push,’ ‘virtual " "environment,’ ‘docker container,’ ‘backpropagation,’ ‘gradient descent,’ " "‘PyTorch Lightning,’ etc.) while preserving overall clarity for standard " "English text." )
+# Technical prompt for improved transcription accuracy with mitigation for hallucinations
+TECHNICAL_PROMPT = (
+    "This audio includes detailed technical content about Python development, "
+    "machine learning, and software engineering workflows. Topics may involve "
+    "Git, GitHub, version control (branches, commits, pull requests), coding in "
+    "VS Code or Ubuntu, and libraries like PyTorch or TensorFlow. Please "
+    "transcribe all technical terms accurately (e.g., 'git push,' 'virtual "
+    "environment,' 'docker container,' 'backpropagation,' 'gradient descent,' "
+    "'PyTorch Lightning,' etc.) while preserving overall clarity for standard "
+    "English text. Do not add introductory phrases like 'thank you', 'thank you "
+    "for watching', 'welcome', or other greeting/closing phrases unless they are "
+    "clearly spoken in the audio. Only transcribe what is actually said."
+)
 
 class RealTimeTranscriber:
     def __init__(self, model):
@@ -42,6 +54,11 @@ class RealTimeTranscriber:
         # For long record mode
         self.long_mode = False
         self.long_frames = []
+        
+        # For audio detection - simplified to a boolean flag
+        self.audio_detected = False
+        # Counter to maintain the indicator visible for a short period
+        self.audio_detection_counter = 0
 
     def start_recording(self, mode="normal"):
         """
@@ -74,6 +91,36 @@ class RealTimeTranscriber:
             self.record_thread.join()
         self.stream.stop_stream()
         self.stream.close()
+        # Reset audio detection when stopped
+        self.audio_detected = False
+        self.audio_detection_counter = 0
+
+    def calculate_audio_level(self, audio_data):
+        """Detect if audio data contains speech above threshold."""
+        # Convert bytes to int16 array
+        audio_array = np.frombuffer(audio_data, dtype=np.int16)
+        
+        # Check if audio_array is empty (to avoid division by zero)
+        if len(audio_array) == 0:
+            return
+            
+        # Calculate RMS (Root Mean Square)
+        rms = np.sqrt(np.mean(np.square(audio_array.astype(np.float32))))
+        
+        # Threshold for detecting active speech (may need adjustment)
+        threshold = 300
+        
+        # Set the detection flag if audio is above threshold
+        if rms > threshold:
+            self.audio_detected = True
+            # Set counter to keep indicator visible for a short time (about 300ms)
+            self.audio_detection_counter = 10
+        elif self.audio_detection_counter > 0:
+            # Decrement counter if no audio detected but counter is still active
+            self.audio_detection_counter -= 1
+        else:
+            # Turn off indicator when counter reaches zero
+            self.audio_detected = False
 
     def record_loop(self):
         if self.long_mode:
@@ -81,6 +128,8 @@ class RealTimeTranscriber:
             while self.running:
                 try:
                     data = self.stream.read(CHUNK, exception_on_overflow=False)
+                    # Calculate audio level
+                    self.calculate_audio_level(data)
                 except Exception as e:
                     logging.error("Error reading audio stream", exc_info=True)
                     continue
@@ -101,6 +150,8 @@ class RealTimeTranscriber:
                         break
                     try:
                         data = self.stream.read(CHUNK, exception_on_overflow=False)
+                        # Calculate audio level
+                        self.calculate_audio_level(data)
                     except Exception as e:
                         logging.error("Error reading audio stream", exc_info=True)
                         continue
@@ -127,16 +178,34 @@ class RealTimeTranscriber:
                 wf.setsampwidth(self.audio_interface.get_sample_size(FORMAT))
                 wf.setframerate(16000)
                 wf.writeframes(b''.join(frames))
+            
+            # Check if the audio contains actual speech
+            if self.is_silent(frames):
+                logging.info("Chunk contains mostly silence, skipping transcription")
+                return
+                
             use_fp16 = next(self.model.parameters()).is_cuda
             result = self.model.transcribe(
                 wav_filename,
                 fp16=use_fp16,
                 language="en",
                 task="transcribe",
-                initial_prompt=TECHNICAL_PROMPT
+                initial_prompt=TECHNICAL_PROMPT,
+                # Added temperature parameter to reduce hallucinations
+                temperature=0.0,
+                # Added condition_on_previous_text=False to prevent the model from
+                # generating content based on what it "expects" to hear
+                condition_on_previous_text=False
             )
+            
             new_text = result.get("text", "").strip()
-            self.transcriptions.append(new_text)
+            
+            # Additional filter to catch remaining hallucinated greetings/closings
+            filtered_text = self.filter_hallucinated_phrases(new_text)
+            
+            # Only add non-empty transcriptions
+            if filtered_text:
+                self.transcriptions.append(filtered_text)
         except RuntimeError as e:
             if "Expected key.size(1) == value.size(1)" in str(e):
                 msg = "[Transcription Error: shape mismatch, skipping this chunk]"
@@ -167,3 +236,55 @@ class RealTimeTranscriber:
             final_frames = self.overlap_frames + self.partial_frames
             if final_frames:
                 self.process_audio_chunk(final_frames)
+                
+    def is_silent(self, frames):
+        """Detect if audio frames contain mostly silence."""
+        if not frames:
+            return True
+            
+        # Join frames into a single buffer
+        buffer = b''.join(frames)
+        
+        # Convert to numpy array for analysis
+        audio_array = np.frombuffer(buffer, dtype=np.int16)
+        
+        if len(audio_array) == 0:
+            return True
+            
+        # Calculate RMS energy
+        rms = np.sqrt(np.mean(np.square(audio_array.astype(np.float32))))
+        
+        # Define a threshold for silence (adjust based on your microphone and environment)
+        # The threshold of 500 is a reasonable starting point but may need adjustment
+        silence_threshold = 300
+        
+        # If the RMS is below the threshold, consider it silence
+        return rms < silence_threshold
+        
+    def filter_hallucinated_phrases(self, text):
+        """Remove common hallucinated phrases from the transcription."""
+        if not text:
+            return text
+            
+        # Common phrases that Whisper often hallucinates at the beginning
+        common_hallucinations = [
+            "thank you for watching",
+            "thanks for watching",
+            "thank you",
+            "thanks",
+            "welcome to",
+            "welcome back",
+            "hello everyone",
+            "hi everyone"
+        ]
+        
+        # Check for hallucinated phrases at the beginning of the text
+        lower_text = text.lower()
+        for phrase in common_hallucinations:
+            if lower_text.startswith(phrase):
+                # Remove the phrase and any following whitespace
+                text = text[len(phrase):].lstrip()
+                # Start checking again with the shortened text
+                lower_text = text.lower()
+        
+        return text

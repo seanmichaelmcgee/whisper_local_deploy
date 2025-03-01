@@ -35,3 +35,6 @@ build/
 *.json
 *.pem
 *.pkl
+
+#general archive file for versions not needed to push
+archive/
