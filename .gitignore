@@ -38,3 +38,4 @@ build/
 
 #general archive file for versions not needed to push
 archive/
+AppDir/

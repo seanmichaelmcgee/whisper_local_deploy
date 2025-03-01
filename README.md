@@ -14,6 +14,9 @@ This application was built primarily using iterative work on consumer-level LLMs
 
 The application is optimized for English and transcription only. This can easily be adjusted in the transcriber code. This application runs stably in Ubuntu 24.04 on PC with NVIDIA 1660 Ti, 6GB of VRAM, and a 9th generation Intel i7. Enjoy!
 
+A green status bar was added so you know when it is detecting audio.
+
+Given distribution issue, at present to run I recommend a fresh terminal, activating VENV in your PATH, and running gui-v0.8.py,
 
 ## ✨ Features
 
@@ -104,6 +107,13 @@ The next development phase will focus on containerizing this application:
 - Adding language support beyond English
 - Implementing post-processing to improve grammar and remove filler words
 - UI improvements including theme support
+
+## Distrubution
+
+Library issues, specifically libcusparseLt.so.0, prevent the CUDA optimization from working with a AppImage distrubution. Issues would abound with Linux builds. etc. Conatainerized distribution is a posibility, but already requires a higher level of user knowledge. Perhaps ONNX doesn't require as much? Build would then have to be from system code level, and would ltake a lot of optimzation.
+
+In the meantime recommend terminal based run within virtual environemnt after installing dependencies.
+
 
 ## 📜 License
 
