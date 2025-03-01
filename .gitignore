@@ -35,3 +35,11 @@ build/
 *.json
 *.pem
 *.pkl
+
+
+#dist/
+venv/
+__pycache__/
+*.AppImage
+.vscode/
+*.log
