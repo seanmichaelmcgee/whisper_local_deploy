@@ -8,3 +8,17 @@
 - **libgirepository1.0-dev**: Provides the development files for GObject Introspection, which is required by the `pygobject` package.
 - **portaudio19-dev**: Supplies the development files for PortAudio, necessary for building the `PyAudio` package.
 
+## ffmpeg Installation Requirement
+
+This project requires **ffmpeg** to be installed and available in your system's PATH. If you encounter the error:
+
+    FileNotFoundError: [Errno 2] No such file or directory: 'ffmpeg'
+
+it means that **ffmpeg** is missing. To resolve this, please install **ffmpeg**.
+
+For Debian/Ubuntu systems, you can install it using:
+    
+    sudo apt-get update
+    sudo apt-get install ffmpeg
+
+For other platforms, refer to your distribution's installation guidelines for **ffmpeg**.
