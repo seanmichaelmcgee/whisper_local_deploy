@@ -13,7 +13,7 @@ import numpy as np
 CHUNK = 2048  # Increased for better performance on high-end CPU
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
-DEFAULT_CHUNK_DURATION = 60  # seconds for normal mode processing
+DEFAULT_CHUNK_DURATION = 240  # seconds for normal mode processing (doubled from 120)
 OVERLAP_DURATION = 1 # 1 second overlap
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -140,8 +140,8 @@ class RealTimeTranscriber:
                     logging.error("Error reading audio stream", exc_info=True)
                     continue
                 self.long_frames.append(data)
-                # Auto-stop after 300 seconds if not interrupted
-                if time.time() - self.long_start_time >= 300:
+                # Auto-stop after 600 seconds if not interrupted (doubled from 300)
+                if time.time() - self.long_start_time >= 600:
                     self.running = False
             # Once stopped, process the entire accumulated audio as one chunk.
             if self.long_frames:
